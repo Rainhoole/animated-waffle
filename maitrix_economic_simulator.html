@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Maitrix Economic Model Simulator</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      margin: 20px;
+      background: #f9f9f9;
+    }
+    h1 {
+      text-align: center;
+    }
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+      background: #fff;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    .flex {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 10px;
+    }
+    .flex label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: 600;
+    }
+    input[type=number] {
+      width: 100%;
+      padding: 6px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      box-sizing: border-box;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 1em;
+    }
+    table, th, td {
+      border: 1px solid #ccc;
+    }
+    th, td {
+      padding: 8px;
+      text-align: right;
+    }
+    th {
+      background: #f0f0f0;
+    }
+    .highlight {
+      background: #fafaf0;
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+  <h1>Maitrix Economic Model Simulator</h1>
+
+  <p>This is a simple simulator for the Maitrix Ambassador economic model. You can adjust the parameters below to see how various factors (number of Ambassadors, staked amounts, etc.) might affect daily and weekly reward payouts.</p>
+
+  <div>
+    <h2>Global Parameters</h2>
+    <div class="flex">
+      <div style="flex:1; min-width:180px;">
+        <label>Average Referees per Ambassador</label>
+        <input type="number" id="avgRefereesPerAmbassador" value="5" />
+      </div>
+      <div style="flex:1; min-width:180px;">
+        <label>Avg Stake of Each Referee (USD)</label>
+        <input type="number" id="avgStakeOfReferee" value="500" />
+      </div>
+      <div style="flex:1; min-width:180px;">
+        <label>Daily Base PILL per $1 AUSD</label>
+        <input type="number" id="dailyBasePillPerUsd" value="5" />
+      </div>
+      <div style="flex:1; min-width:180px;">
+        <label>Base L1 Commission Rate (%)</label>
+        <input type="number" id="baseCommissionRateLevel1" value="9" />
+      </div>
+    </div>
+  </div>
+
+  <hr />
+  <div>
+    <h2>Ambassador Tiers</h2>
+    <p>Adjust the tiers to represent different Ambassador groups in your ecosystem.</p>
+
+    <div id="tierContainer"></div>
+    <button id="addTierBtn">+ Add New Tier</button>
+  </div>
+
+  <hr />
+
+  <div>
+    <h2>Calculation Results</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Tier</th>
+          <th>Amb. Count</th>
+          <th>Avg Stake (USD)</th>
+          <th>Total Stake</th>
+          <th>Staking Mult. (%)</th>
+          <th>Eff. L1 Rate (%)</th>
+          <th>Daily PILL from Ref</th>
+          <th>Weekly Extra</th>
+        </tr>
+      </thead>
+      <tbody id="resultsTbody"></tbody>
+    </table>
+
+    <div style="margin-top:1em; border-top:1px solid #ccc; padding-top:1em;">
+      <h3>Overall Summary</h3>
+      <p>Total Ambassadors: <span id="sumAmbassadorCount"></span></p>
+      <p>Total Ambassador Stake (USD): <span id="sumTotalStake"></span></p>
+      <p>Total Daily PILL from Referrals: <span id="sumDailyPILL"></span></p>
+      <p>Total Weekly Extra PILL: <span id="sumWeeklyExtra"></span></p>
+    </div>
+  </div>
+</div>
+
+<script>
+  // Default Tiers
+  let tiers = [
+    {
+      name: 'Bronze',
+      ambassadorCount: 500,
+      avgStake: 800,
+      weeklyBonusRate: 5,  // in %
+      commissionBoost: 0,  // in %
+    },
+    {
+      name: 'Silver',
+      ambassadorCount: 200,
+      avgStake: 2500,
+      weeklyBonusRate: 7,
+      commissionBoost: 5,
+    },
+    {
+      name: 'Gold',
+      ambassadorCount: 80,
+      avgStake: 6000,
+      weeklyBonusRate: 10,
+      commissionBoost: 10,
+    },
+    {
+      name: 'Diamond',
+      ambassadorCount: 20,
+      avgStake: 12000,
+      weeklyBonusRate: 15,
+      commissionBoost: 20,
+    },
+  ];
+
+  const tierContainer = document.getElementById('tierContainer');
+  const resultsTbody = document.getElementById('resultsTbody');
+  const sumAmbassadorCountEl = document.getElementById('sumAmbassadorCount');
+  const sumTotalStakeEl = document.getElementById('sumTotalStake');
+  const sumDailyPILLEl = document.getElementById('sumDailyPILL');
+  const sumWeeklyExtraEl = document.getElementById('sumWeeklyExtra');
+
+  // global params
+  const avgRefInput = document.getElementById('avgRefereesPerAmbassador');
+  const avgStakeRefInput = document.getElementById('avgStakeOfReferee');
+  const dailyPillInput = document.getElementById('dailyBasePillPerUsd');
+  const baseCommInput = document.getElementById('baseCommissionRateLevel1');
+
+  function renderTiers() {
+    tierContainer.innerHTML = '';
+    tiers.forEach((tier, index) => {
+      const wrapper = document.createElement('div');
+      wrapper.style.border = '1px solid #ccc';
+      wrapper.style.padding = '10px';
+      wrapper.style.marginBottom = '10px';
+      wrapper.style.borderRadius = '4px';
+
+      const label = document.createElement('h3');
+      label.textContent = `${tier.name} Tier`;
+      wrapper.appendChild(label);
+
+      // name
+      const nameLabel = document.createElement('label');
+      nameLabel.textContent = 'Tier Name';
+      const nameInput = document.createElement('input');
+      nameInput.type = 'text';
+      nameInput.value = tier.name;
+      nameInput.style.marginBottom = '8px';
+      nameInput.style.width = '100%';
+      nameInput.oninput = (e) => {
+        tier.name = e.target.value;
+        renderResults();
+      };
+
+      // ambassadorCount
+      const ambLabel = document.createElement('label');
+      ambLabel.textContent = 'Ambassador Count';
+      const ambInput = document.createElement('input');
+      ambInput.type = 'number';
+      ambInput.value = tier.ambassadorCount;
+      ambInput.style.marginBottom = '8px';
+      ambInput.style.width = '100%';
+      ambInput.oninput = (e) => {
+        tier.ambassadorCount = parseFloat(e.target.value) || 0;
+        renderResults();
+      };
+
+      // avgStake
+      const stakeLabel = document.createElement('label');
+      stakeLabel.textContent = 'Avg Stake (USD)';
+      const stakeInput = document.createElement('input');
+      stakeInput.type = 'number';
+      stakeInput.value = tier.avgStake;
+      stakeInput.style.marginBottom = '8px';
+      stakeInput.style.width = '100%';
+      stakeInput.oninput = (e) => {
+        tier.avgStake = parseFloat(e.target.value) || 0;
+        renderResults();
+      };
+
+      // weeklyBonusRate
+      const wbrLabel = document.createElement('label');
+      wbrLabel.textContent = 'Weekly Bonus Rate (%)';
+      const wbrInput = document.createElement('input');
+      wbrInput.type = 'number';
+      wbrInput.value = tier.weeklyBonusRate;
+      wbrInput.style.marginBottom = '8px';
+      wbrInput.style.width = '100%';
+      wbrInput.oninput = (e) => {
+        tier.weeklyBonusRate = parseFloat(e.target.value) || 0;
+        renderResults();
+      };
+
+      // commissionBoost
+      const cbLabel = document.createElement('label');
+      cbLabel.textContent = 'Commission Boost (%)';
+      const cbInput = document.createElement('input');
+      cbInput.type = 'number';
+      cbInput.value = tier.commissionBoost;
+      cbInput.style.marginBottom = '8px';
+      cbInput.style.width = '100%';
+      cbInput.oninput = (e) => {
+        tier.commissionBoost = parseFloat(e.target.value) || 0;
+        renderResults();
+      };
+
+      // remove button
+      const removeBtn = document.createElement('button');
+      removeBtn.style.marginTop = '8px';
+      removeBtn.textContent = 'Remove This Tier';
+      removeBtn.onclick = () => {
+        tiers.splice(index, 1);
+        renderTiers();
+        renderResults();
+      };
+
+      wrapper.appendChild(nameLabel);
+      wrapper.appendChild(nameInput);
+
+      wrapper.appendChild(ambLabel);
+      wrapper.appendChild(ambInput);
+
+      wrapper.appendChild(stakeLabel);
+      wrapper.appendChild(stakeInput);
+
+      wrapper.appendChild(wbrLabel);
+      wrapper.appendChild(wbrInput);
+
+      wrapper.appendChild(cbLabel);
+      wrapper.appendChild(cbInput);
+
+      wrapper.appendChild(removeBtn);
+
+      tierContainer.appendChild(wrapper);
+    });
+  }
+
+  function calcStakingMultiplier(stake) {
+    // every 1000 => +0.5%, up to 15%
+    let tierCount = Math.floor(stake / 1000);
+    let extra = tierCount * 0.5;
+    if (extra > 15) {
+      extra = 15;
+    }
+    return extra;
+  }
+
+  function renderResults() {
+    resultsTbody.innerHTML = '';
+
+    // get global params
+    const avgRef = parseFloat(avgRefInput.value) || 0;
+    const avgRefStake = parseFloat(avgStakeRefInput.value) || 0;
+    const dailyBasePILL = parseFloat(dailyPillInput.value) || 0;
+    const baseComm = parseFloat(baseCommInput.value) || 0; // base L1 Commission %
+
+    let sumAmbCount = 0;
+    let sumStake = 0;
+    let sumDailyPILL = 0;
+    let sumWeeklyExtra = 0;
+
+    // days in a week
+    const daysInWeek = 7;
+
+    tiers.forEach(tier => {
+      // total stake for the tier
+      const totalStake = tier.ambassadorCount * tier.avgStake;
+
+      // staking multiplier
+      const sm = calcStakingMultiplier(tier.avgStake) / 100; // decimal
+
+      // final effective L1 rate
+      const baseCommDecimal = baseComm / 100;
+      const effectiveL1 = baseCommDecimal * (1 + (tier.commissionBoost / 100) + sm);
+
+      // daily PILL from each referred user for the ambassador
+      const dailyPillEachRef = avgRefStake * dailyBasePILL; // e.g. 500 * 5 = 2500 PILL/day
+      // ambassador daily from each referred user
+      const dailyCommissionEachRef = dailyPillEachRef * effectiveL1;
+      // each ambassador has X referees
+      const dailyAmbassadorAllRef = dailyCommissionEachRef * avgRef;
+
+      // all ambassadors in that tier
+      const dailyTier = dailyAmbassadorAllRef * tier.ambassadorCount;
+
+      // weekly extra
+      const wbr = tier.weeklyBonusRate / 100;
+      const weeklyExtra = dailyTier * daysInWeek * wbr;
+
+      // accumulate sums
+      sumAmbCount += tier.ambassadorCount;
+      sumStake += totalStake;
+      sumDailyPILL += dailyTier;
+      sumWeeklyExtra += weeklyExtra;
+
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td style="text-align:left">${tier.name}</td>
+        <td>${tier.ambassadorCount}</td>
+        <td>${tier.avgStake}</td>
+        <td>${totalStake}</td>
+        <td>${(sm*100).toFixed(2)}</td>
+        <td>${(effectiveL1*100).toFixed(2)}</td>
+        <td>${dailyTier.toFixed(2)}</td>
+        <td>${weeklyExtra.toFixed(2)}</td>
+      `;
+      resultsTbody.appendChild(tr);
+    });
+
+    sumAmbassadorCountEl.textContent = sumAmbCount;
+    sumTotalStakeEl.textContent = sumStake.toFixed(2);
+    sumDailyPILLEl.textContent = sumDailyPILL.toFixed(2);
+    sumWeeklyExtraEl.textContent = sumWeeklyExtra.toFixed(2);
+  }
+
+  document.getElementById('addTierBtn').addEventListener('click', () => {
+    tiers.push({
+      name: 'Custom',
+      ambassadorCount: 100,
+      avgStake: 1000,
+      weeklyBonusRate: 5,
+      commissionBoost: 0,
+    });
+    renderTiers();
+    renderResults();
+  });
+
+  // re-render results on global param changes
+  avgRefInput.addEventListener('input', renderResults);
+  avgStakeRefInput.addEventListener('input', renderResults);
+  dailyPillInput.addEventListener('input', renderResults);
+  baseCommInput.addEventListener('input', renderResults);
+
+  renderTiers();
+  renderResults();
+</script>
+
+</body>
+</html>
